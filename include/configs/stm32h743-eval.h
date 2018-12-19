@@ -15,8 +15,8 @@
 /*
  * Configuration of the external SDRAM memory
  */
-#define CONFIG_SYS_LOAD_ADDR		0xD0400000
-#define CONFIG_LOADADDR			0xD0400000
+#define CONFIG_SYS_LOAD_ADDR		0xC0400000
+#define CONFIG_LOADADDR			0xC0400000
 
 #define CONFIG_ENV_SIZE			(8 << 10)
 
@@ -35,14 +35,14 @@
 
 #include <config_distro_bootcmd.h>
 #define CONFIG_EXTRA_ENV_SETTINGS				\
-			"kernel_addr_r=0xD0008000\0"		\
+			"kernel_addr_r=0xC0008000\0"		\
 			"fdtfile=stm32h743i-eval.dtb\0"	\
-			"fdt_addr_r=0xD0700000\0"		\
-			"scriptaddr=0xD0800000\0"		\
-			"pxefile_addr_r=0xD0800000\0" \
+			"fdt_addr_r=0xC0700000\0"		\
+			"scriptaddr=0xC0800000\0"		\
+			"pxefile_addr_r=0xC0800000\0" \
 			"fdt_high=0xffffffffffffffff\0"		\
 			"initrd_high=0xffffffffffffffff\0"	\
-			"ramdisk_addr_r=0xD0900000\0"		\
+			"ramdisk_addr_r=0xC0900000\0"		\
 			BOOTENV
 
 /*

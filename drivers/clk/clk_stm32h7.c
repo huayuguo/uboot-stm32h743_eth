@@ -210,11 +210,11 @@ static const struct clk_cfg clk_map[] = {
 	{RCC_AHB3ENR,   4, "dma2d"},
 	{RCC_AHB3ENR,   0, "mdma"},
 	{RCC_AHB1ENR,  28, "usb2ulpi"},
+	{RCC_AHB1ENR,  26, "usb1ulpi"},
 	{RCC_AHB1ENR,  17, "eth1rx"},
 	{RCC_AHB1ENR,  16, "eth1tx"},
 	{RCC_AHB1ENR,  15, "eth1mac"},
 	{RCC_AHB1ENR,  14, "art"},
-	{RCC_AHB1ENR,  26, "usb1ulpi"},
 	{RCC_AHB1ENR,   1, "dma2"},
 	{RCC_AHB1ENR,   0, "dma1"},
 	{RCC_AHB2ENR,  31, "d2sram3"},
@@ -330,10 +330,10 @@ struct pll_psc {
  * pll1_p = 250MHz / pll1_q = 250MHz pll1_r = 250Mhz
  */
 struct pll_psc sys_pll_psc = {
-	.divm = 4,
-	.divn = 80,
+	.divm = 5,
+	.divn = 160,
 	.divp = 2,
-	.divq = 2,
+	.divq = 4,
 	.divr = 2,
 };
 
