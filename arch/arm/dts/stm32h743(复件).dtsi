@@ -38,14 +38,12 @@
  *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  *     OTHER DEALINGS IN THE SOFTWARE.
- *	compatible = "arm,armv7m-systick";
  */
 
 #include "skeleton.dtsi"
 #include "armv7-m.dtsi"
 #include <dt-bindings/clock/stm32h7-clks.h>
 #include <dt-bindings/mfd/stm32h7-rcc.h>
-#include <dt-bindings/gpio/gpio.h>
 
 / {
 	clocks {
@@ -106,15 +104,9 @@
 			reg = <0x58024800 0x400>;
 		};
 
-		syscfg: system-config@58000400 {
-			compatible = "syscon";
-			reg = <0x58000400 0x400>;
-		};
-
 		fmc: fmc@52004000 {
 			compatible = "st,stm32h7-fmc";
 			reg = <0x52004000 0x1000>;
-			st,mem_remap = <1>;
 			clocks = <&rcc FMC_CK>;
 		};
 
@@ -139,24 +131,12 @@
 			st,idma = <1>;
 			cap-sd-highspeed;
 			cap-mmc-highspeed;
-			status = "okay";
-		};
-		mac: ethernet@40028000 {
-			compatible = "st,stm32h7-dwmac","snps,dwc-qos-ethernet-4.10";
-			reg = <0x40028000 0x8000>;
-			reg-names = "stmmaceth";
-			clock-names = "stmmaceth", "mac-clk-tx", "mac-clk-rx";
-			clocks = <&rcc ETH1MAC_CK>,<&rcc ETH1TX_CK>,<&rcc ETH1RX_CK>;
-			resets = <&rcc STM32H7_AHB1_RESET(ETH1MAC)>;
-			reset-names = "stmmaceth";
-			interrupts = <61>, <62>;
-			interrupt-names = "macirq", "eth_wake_irq";
 			status = "disabled";
 		};
 	};
 };
 
 &systick {
-	clock-frequency = <400000000>;
+	clock-frequency = <250000000>;
 	status = "okay";
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 - Alexandre Torgue <alexandre.torgue@st.com>
+ * Copyright 2017 - Patrice Chotard <patrice.chotard@st.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -46,24 +46,21 @@
 #include <dt-bindings/memory/stm32-sdram.h>
 
 / {
-	model = "STMicroelectronics STM32H743i-EVAL board";
-	compatible = "st,stm32h743i-eval", "st,stm32h743";
+	model = "STMicroelectronics STM32H743i-Discovery board";
+	compatible = "st,stm32h743i-disco", "st,stm32h743";
 
 	chosen {
 		bootargs = "root=/dev/ram";
 		stdout-path = "serial0:115200n8";
-		tick-timer = &systick;
 	};
 
 	memory {
-		reg = <0x60000000 0x2000000>;
+		reg = <0xd0000000 0x2000000>;
 	};
 
 	aliases {
-		serial0 = &usart1;
+		serial0 = &usart2;
 		mmc0 = &sdmmc1;
-		eth0 = &mac;
-		tick-timer = &systick;
 		gpio0 = &gpioa;
 		gpio1 = &gpiob;
 		gpio2 = &gpioc;
@@ -78,30 +75,10 @@
 	};
 };
 
-&usart1 {
-	pinctrl-0 = <&usart1_pins>;
+&usart2 {
+	pinctrl-0 = <&usart2_pins>;
 	pinctrl-names = "default";
-	status = "okay"; 
-};
-
-&mac {
 	status = "okay";
-	local-mac-address = [aa 0a 0b 0c 0d dd];
-	pinctrl-0 = <&ethernet_mii>;
-	phy-mode = "rmii";
-	phy-handle = <&phy0>;
-	clock_in_out = "input";
-	snps,reset-gpio = <&gpiob 12 0>;
-	snps,reset-delays-us = <0 10000 1000000>;
-	mdio0 {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		compatible = "snps,dwmac-mdio";
-		phy0: ethernet-phy@0 {
-			compatible = "smsc,lan8710","smsc,lan8720";
-                        reg = <0>;
-		};
-	};
 };
 
 &fmc {
@@ -114,18 +91,19 @@
 	 * firsct bank is bank@0
 	 * second bank is bank@1
 	 */
-	bank0: bank@0 {
-		st,sdram-control = /bits/ 8 <NO_COL_9 NO_ROW_13 MWIDTH_16 BANKS_4
-				  CAS_2 SDCLK_2 RD_BURST_EN RD_PIPE_DL_0>;
-		st,sdram-timing = /bits/ 8 <TMRD_2 TXSR_8 TRAS_5 TRC_7 TRP_2
-				  TWR_2 TRCD_2>;
-		st,sdram-refcount = <761>;
+	bank1: bank@1 {
+		st,sdram-control = /bits/ 8 <NO_COL_9 NO_ROW_12 MWIDTH_32 BANKS_4
+				  CAS_2 SDCLK_3 RD_BURST_EN RD_PIPE_DL_0>;
+		st,sdram-timing = /bits/ 8 <TMRD_1 TXSR_1 TRAS_1 TRC_6 TRP_2
+				  TWR_1 TRCD_1>;
+		st,sdram-refcount = <1539>;
 	};
 };
+
 &sdmmc1 {
 	status = "okay";
 	pinctrl-0 = <&sdmmc1_pins>;
 	pinctrl-names = "default";
 	bus-width = <4>;
-	st,dirpol;
+	cd-gpios = <&gpioi 8 1>;
 };

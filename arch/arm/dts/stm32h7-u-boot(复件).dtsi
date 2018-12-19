@@ -6,37 +6,11 @@
 	soc {
 		u-boot,dm-pre-reloc;
 		pin-controller {
-				u-boot,dm-pre-reloc;
-			usart1_pins_a: usart1@0	{
 			u-boot,dm-pre-reloc;
-				pins1 {
-					u-boot,dm-pre-reloc;
-					};
-				pins2 {
-					u-boot,dm-pre-reloc;
-					};
-						};
-			fmc_pins: fmc@0 {
-					u-boot,dm-pre-reloc;
-				pins {
-					u-boot,dm-pre-reloc;
-				     };
-					};
-			sdmmc1_pins: sdmmc@0 {
-					u-boot,dm-pre-reloc;
-				pins {
-					u-boot,dm-pre-reloc;
-				     };
-					     };
-			pinctrl_sdmmc1_level_shifter: sdmmc0_ls@0 {
-					u-boot,dm-pre-reloc;
-				pins {
-					u-boot,dm-pre-reloc;
-				     };
-					     };
-				};
 		};
+	};
 };
+
 &clk_hse {
 	u-boot,dm-pre-reloc;
 };

@@ -152,13 +152,13 @@
 
 			usart1_pins: usart1@0 {
 				pins1 {
-					pinmux = <STM32H7_PA9_FUNC_USART1_TX>;
+					pinmux = <STM32H7_PB14_FUNC_USART1_TX>;
 					bias-disable;
 					drive-push-pull;
 					slew-rate = <0>;
 				};
 				pins2 {
-					pinmux = <STM32H7_PA10_FUNC_USART1_RX>;
+					pinmux = <STM32H7_PB15_FUNC_USART1_RX>;
 					bias-disable;
 				};
 			};
@@ -218,9 +218,29 @@
 						  <STM32H7_PG8_FUNC_FMC_SDCLK>,
 						  <STM32H7_PG15_FUNC_FMC_SDNCAS>,
 
-						  <STM32H7_PC0_FUNC_FMC_SDNWE>,
-						  <STM32H7_PC2_FUNC_FMC_SDNE0>,
-						  <STM32H7_PC3_FUNC_FMC_SDCKE0>;
+						  <STM32H7_PH5_FUNC_FMC_SDNWE>,
+						  <STM32H7_PH6_FUNC_FMC_SDNE1>,
+						  <STM32H7_PH7_FUNC_FMC_SDCKE1>,
+						  <STM32H7_PH8_FUNC_FMC_D16>,
+						  <STM32H7_PH9_FUNC_FMC_D17>,
+						  <STM32H7_PH10_FUNC_FMC_D18>,
+						  <STM32H7_PH11_FUNC_FMC_D19>,
+						  <STM32H7_PH12_FUNC_FMC_D20>,
+						  <STM32H7_PH13_FUNC_FMC_D21>,
+						  <STM32H7_PH14_FUNC_FMC_D22>,
+						  <STM32H7_PH15_FUNC_FMC_D23>,
+
+						  <STM32H7_PI0_FUNC_FMC_D24>,
+						  <STM32H7_PI1_FUNC_FMC_D25>,
+						  <STM32H7_PI2_FUNC_FMC_D26>,
+						  <STM32H7_PI3_FUNC_FMC_D27>,
+						  <STM32H7_PI4_FUNC_FMC_NBL2>,
+						  <STM32H7_PI5_FUNC_FMC_NBL3>,
+						  <STM32H7_PI6_FUNC_FMC_D28>,
+						  <STM32H7_PI7_FUNC_FMC_D29>,
+						  <STM32H7_PI9_FUNC_FMC_D30>,
+						  <STM32H7_PI10_FUNC_FMC_D31>;
+
 					  slew-rate = <3>;
 				};
 			};
@@ -250,22 +270,6 @@
 					slew-rate = <3>;
 				};
 			};
-			ethernet_mii: mii@0 {
-	      			pins {
-		      			pinmux = <STM32H7_PG13_FUNC_ETH_MII_TXD0_ETH_RMII_TXD0>,
-			     			<STM32H7_PG14_FUNC_ETH_MII_TXD1_ETH_RMII_TXD1>,
-			    	 		<STM32H7_PB11_FUNC_ETH_MII_TX_EN_ETH_RMII_TX_EN>,
-			    	 		<STM32H7_PA2_FUNC_ETH_MDIO>,
-			    			<STM32H7_PC1_FUNC_ETH_MDC>,
-			    	 		<STM32H7_PA1_FUNC_ETH_MII_RX_CLK_ETH_RMII_REF_CLK>,
-			     			<STM32H7_PA7_FUNC_ETH_MII_RX_DV_ETH_RMII_CRS_DV>,
-			    	 		<STM32H7_PC4_FUNC_ETH_MII_RXD0_ETH_RMII_RXD0>,
-			     			<STM32H7_PC5_FUNC_ETH_MII_RXD1_ETH_RMII_RXD1>;
-		      				slew-rate = <2>;
-	      			};
-			};
-
-
 		};
 	};
 };
