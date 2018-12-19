@@ -52,7 +52,6 @@
 	chosen {
 		bootargs = "root=/dev/ram";
 		stdout-path = "serial0:115200n8";
-		tick-timer = &systick;
 	};
 
 	memory {
@@ -63,7 +62,6 @@
 		serial0 = &usart1;
 		mmc0 = &sdmmc1;
 		eth0 = &mac;
-		tick-timer = &systick;
 		gpio0 = &gpioa;
 		gpio1 = &gpiob;
 		gpio2 = &gpioc;

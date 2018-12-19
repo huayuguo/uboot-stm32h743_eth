@@ -35,7 +35,11 @@
 				     };
 					     };
 				};
-		};
+
+		timer5: timer@40000c00 {
+			u-boot,dm-pre-reloc;
+			};
+	};
 };
 &clk_hse {
 	u-boot,dm-pre-reloc;
