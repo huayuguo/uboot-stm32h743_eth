@@ -17,9 +17,9 @@ mkimage
     1   请到kernel官方下载 linux4.19.7 版本 
     2   解压kernel文件 
     3   复制 uboot 文件夹下的 stm32h7linux4.19.7.config  rootfs.cpio uImage.sh 到 kernel文件夹下
-    4   setp 1 make menuconfig   setp 2  exit save
-    4   执行 ./uImage.sh
-    5   复制 生成的uImage  stm32h743i-eval.dtb 2个文件到sd 卡（格式化为 fat32 格式）
+    4   setp 1 make menuconfig   setp 2  exit save（保存退出）
+    5   执行 ./uImage.sh
+    6   复制 生成的uImage  stm32h743i-eval.dtb 2个文件到sd 卡（格式化为 fat32 格式）
 
 第三步：
     uboot  命令下 复制以下3个命令：依次执行  
@@ -27,10 +27,10 @@ mkimage
     2   fatload mmc 0 c1000000 uImage;fatload mmc 0 c1400000 stm32h743i-eval.dtb
     3   bootm c1000000 - c1400000
 
-or tftpboot
+or tftpboot  用tftpd64 软件搭建tftp服务器指定好IP 和 文件夹目录 
 1 env set bootargs "root=/dev/ram init=/linuxrc console=ttySTM0,115200 "
 2 setenv gatewayip 192.168.xxx.xxx;setenv ipaddr 192.168.xxx.xxx;setenv netmask 255.255.255.0;setenv ethaddr  1a:5a:38:ef:38:d8;
 3 tftpboot c1000000 192.168.xxx.xxx:uImage;tftpboot c1400000 192.168.xxx.xxx:stm32h743i-eval.dtb;
 4 bootm c1000000 - c1400000
 
-   use eth  PCF8574T  Pin 12-13
+ 备注：如果要使用eth 网卡  需要将 I2C io扩展芯片 PCF8574T  Pin 12-13  连接起来。phy reset io
