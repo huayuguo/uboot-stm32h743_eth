@@ -1,30 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2016, NVIDIA CORPORATION.
- *
  * Portions based on U-Boot's rtl8169.c.
- */
-
-/*
- * This driver supports the Synopsys Designware Ethernet QOS (Quality Of
- * Service) IP block. The IP supports multiple options for bus type, clocking/
- * reset structure, and feature list.
  *
- * The driver is written such that generic core logic is kept separate from
- * configuration-specific logic. Code that interacts with configuration-
- * specific resources is split out into separate functions to avoid polluting
- * common code. If/when this driver is enhanced to support multiple
- * configurations, the core code should be adapted to call all configuration-
- * specific functions through function pointers, with the definition of those
- * function pointers being supplied by struct udevice_id eqos_ids[]'s .data
- * field.
- *
- * The following configurations are currently supported:
- * tegra186:
- *    NVIDIA's Tegra186 chip. This configuration uses an AXI master/DMA bus, an
- *    AHB slave/register bus, contains the DMA, MTL, and MAC sub-blocks, and
- *    supports a single RGMII PHY. This configuration also has SW control over
- *    all clock and reset signals to the HW block.
+ * STM32H7 support added for Synopsys DesignWare Ethernet QOS IP.
  */
 
 #include <common.h>
@@ -41,98 +20,105 @@
 #include <wait_bit.h>
 #include <asm/gpio.h>
 #include <asm/io.h>
+#include <dm/device-internal.h>
+#include <dm/uclass-internal.h>
+#include <linux/err.h>
+
+#ifdef CONFIG_STM32H7
+#include <dt-bindings/mfd/stm32h7-rcc.h>
+#endif
 
 /* Core registers */
 
 #define EQOS_MAC_REGS_BASE 0x000
 struct eqos_mac_regs {
-	uint32_t configuration;				/* 0x000 */
-	uint32_t MACECR;				/* 0x004 */	
-	uint32_t unused_004[(0x070 - 0x008) / 4];	/* 0x008 */
-	uint32_t q0_tx_flow_ctrl;			/* 0x070 */
-	uint32_t unused_070[(0x090 - 0x074) / 4];	/* 0x074 */
-	uint32_t rx_flow_ctrl;				/* 0x090 */
-	uint32_t unused_094;				/* 0x094 */
-	uint32_t txq_prty_map0;				/* 0x098 */
-	uint32_t unused_09c;				/* 0x09c */
-	uint32_t rxq_ctrl0;				/* 0x0a0 */
-	uint32_t unused_0a4;				/* 0x0a4 */
-	uint32_t rxq_ctrl2;				/* 0x0a8 */
-	uint32_t unused_0ac[(0x0dc - 0x0ac) / 4];	/* 0x0ac */
-	uint32_t us_tic_counter;			/* 0x0dc */
-	uint32_t unused_0e0[(0x11c - 0x0e0) / 4];	/* 0x0e0 */
-	uint32_t hw_feature0;				/* 0x11c */
-	uint32_t hw_feature1;				/* 0x120 */
-	uint32_t hw_feature2;				/* 0x124 */
-	uint32_t unused_128[(0x200 - 0x128) / 4];	/* 0x128 */
-	uint32_t mdio_address;				/* 0x200 */
-	uint32_t mdio_data;				/* 0x204 */
-	uint32_t unused_208[(0x300 - 0x208) / 4];	/* 0x208 */
-	uint32_t address0_high;				/* 0x300 */
-	uint32_t address0_low;				/* 0x304 */
+	uint32_t configuration;
+	uint32_t MACECR;
+	uint32_t unused_004[(0x070 - 0x008) / 4];
+	uint32_t q0_tx_flow_ctrl;
+	uint32_t unused_070[(0x090 - 0x074) / 4];
+	uint32_t rx_flow_ctrl;
+	uint32_t unused_094;
+	uint32_t txq_prty_map0;
+	uint32_t unused_09c;
+	uint32_t rxq_ctrl0;
+	uint32_t unused_0a4;
+	uint32_t rxq_ctrl2;
+	uint32_t unused_0ac[(0x0dc - 0x0ac) / 4];
+	uint32_t us_tic_counter;
+	uint32_t unused_0e0[(0x11c - 0x0e0) / 4];
+	uint32_t hw_feature0;
+	uint32_t hw_feature1;
+	uint32_t hw_feature2;
+	uint32_t unused_128[(0x200 - 0x128) / 4];
+	uint32_t mdio_address;
+	uint32_t mdio_data;
+	uint32_t unused_208[(0x300 - 0x208) / 4];
+	uint32_t address0_high;
+	uint32_t address0_low;
 };
 
 #define EQOS_MAC_CONFIGURATION_ARPEN		BIT(31)
-#define EQOS_MAC_CONFIGURATION_SARC			BIT(28)
-#define EQOS_MAC_CONFIGURATION_IPC			BIT(27)
-#define EQOS_MAC_CONFIGURATION_GPSLCE			BIT(23)
-#define EQOS_MAC_CONFIGURATION_CST			BIT(21)
-#define EQOS_MAC_CONFIGURATION_ACS			BIT(20)
-#define EQOS_MAC_CONFIGURATION_WD			BIT(19)
-#define EQOS_MAC_CONFIGURATION_JD			BIT(17)
-#define EQOS_MAC_CONFIGURATION_JE			BIT(16)
-#define EQOS_MAC_CONFIGURATION_PS			BIT(15)
-#define EQOS_MAC_CONFIGURATION_FES			BIT(14)
-#define EQOS_MAC_CONFIGURATION_DM			BIT(13)
-#define EQOS_MAC_CONFIGURATION_TE			BIT(1)
-#define EQOS_MAC_CONFIGURATION_RE			BIT(0)
+#define EQOS_MAC_CONFIGURATION_SARC		BIT(28)
+#define EQOS_MAC_CONFIGURATION_IPC		BIT(27)
+#define EQOS_MAC_CONFIGURATION_GPSLCE		BIT(23)
+#define EQOS_MAC_CONFIGURATION_CST		BIT(21)
+#define EQOS_MAC_CONFIGURATION_ACS		BIT(20)
+#define EQOS_MAC_CONFIGURATION_WD		BIT(19)
+#define EQOS_MAC_CONFIGURATION_JD		BIT(17)
+#define EQOS_MAC_CONFIGURATION_JE		BIT(16)
+#define EQOS_MAC_CONFIGURATION_PS		BIT(15)
+#define EQOS_MAC_CONFIGURATION_FES		BIT(14)
+#define EQOS_MAC_CONFIGURATION_DM		BIT(13)
+#define EQOS_MAC_CONFIGURATION_TE		BIT(1)
+#define EQOS_MAC_CONFIGURATION_RE		BIT(0)
 
-#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT		16
-#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_MASK		0xffff
-#define EQOS_MAC_Q0_TX_FLOW_CTRL_TFE			BIT(1)
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT	16
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_PT_MASK	0xffff
+#define EQOS_MAC_Q0_TX_FLOW_CTRL_TFE		BIT(1)
 
-#define EQOS_MAC_RX_FLOW_CTRL_RFE			BIT(0)
+#define EQOS_MAC_RX_FLOW_CTRL_RFE		BIT(0)
 
-#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_SHIFT		0
-#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_MASK		0xff
+#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_SHIFT	0
+#define EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_MASK	0xff
 
-#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT			0
-#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK			3
-#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_NOT_ENABLED		0
-#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_DCB		2
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT	0
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK		3
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_NOT_ENABLED	0
+#define EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_DCB	2
 
-#define EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT			0
-#define EQOS_MAC_RXQ_CTRL2_PSRQ0_MASK			0xff
+#define EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT		0
+#define EQOS_MAC_RXQ_CTRL2_PSRQ0_MASK		0xff
 
-#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT		6
-#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK		0x1f
-#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT		0
-#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_MASK		0x1f
+#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT	6
+#define EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK	0x1f
+#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT	0
+#define EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_MASK	0x1f
 
-#define EQOS_MAC_MDIO_ADDRESS_PA_SHIFT			21
-#define EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT			16
-#define EQOS_MAC_MDIO_ADDRESS_CR_SHIFT			8
-#define EQOS_MAC_MDIO_ADDRESS_CR_20_35			2
-#define EQOS_MAC_MDIO_ADDRESS_SKAP			BIT(4)
-#define EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT			2
-#define EQOS_MAC_MDIO_ADDRESS_GOC_READ			3
-#define EQOS_MAC_MDIO_ADDRESS_GOC_WRITE			1
-#define EQOS_MAC_MDIO_ADDRESS_C45E			BIT(1)
-#define EQOS_MAC_MDIO_ADDRESS_GB			BIT(0)
+#define EQOS_MAC_MDIO_ADDRESS_PA_SHIFT		21
+#define EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT		16
+#define EQOS_MAC_MDIO_ADDRESS_CR_SHIFT		8
+#define EQOS_MAC_MDIO_ADDRESS_CR_20_35		2
+#define EQOS_MAC_MDIO_ADDRESS_SKAP		BIT(4)
+#define EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT		2
+#define EQOS_MAC_MDIO_ADDRESS_GOC_READ		3
+#define EQOS_MAC_MDIO_ADDRESS_GOC_WRITE		1
+#define EQOS_MAC_MDIO_ADDRESS_C45E		BIT(1)
+#define EQOS_MAC_MDIO_ADDRESS_GB		BIT(0)
 
-#define EQOS_MAC_MDIO_DATA_GD_MASK			0xffff
+#define EQOS_MAC_MDIO_DATA_GD_MASK		0xffff
 
 #define EQOS_MTL_REGS_BASE 0xd00
 struct eqos_mtl_regs {
-	uint32_t txq0_operation_mode;			/* 0xd00 */
-	uint32_t unused_d04;				/* 0xd04 */
-	uint32_t txq0_debug;				/* 0xd08 */
-	uint32_t unused_d0c[(0xd18 - 0xd0c) / 4];	/* 0xd0c */
-	uint32_t txq0_quantum_weight;			/* 0xd18 */
-	uint32_t unused_d1c[(0xd30 - 0xd1c) / 4];	/* 0xd1c */
-	uint32_t rxq0_operation_mode;			/* 0xd30 */
-	uint32_t unused_d34;				/* 0xd34 */
-	uint32_t rxq0_debug;				/* 0xd38 */
+	uint32_t txq0_operation_mode;
+	uint32_t unused_d04;
+	uint32_t txq0_debug;
+	uint32_t unused_d0c[(0xd18 - 0xd0c) / 4];
+	uint32_t txq0_quantum_weight;
+	uint32_t unused_d1c[(0xd30 - 0xd1c) / 4];
+	uint32_t rxq0_operation_mode;
+	uint32_t unused_d34;
+	uint32_t rxq0_debug;
 };
 
 #define EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT		16
@@ -145,7 +131,7 @@ struct eqos_mtl_regs {
 
 #define EQOS_MTL_TXQ0_DEBUG_TXQSTS			BIT(4)
 #define EQOS_MTL_TXQ0_DEBUG_TRCSTS_SHIFT		1
-#define EQOS_MTL_TXQ0_DEBUG_TRCSTS_MASK			3
+#define EQOS_MTL_TXQ0_DEBUG_TRCSTS_MASK		3
 
 #define EQOS_MTL_RXQ0_OPERATION_MODE_RQS_SHIFT		20
 #define EQOS_MTL_RXQ0_OPERATION_MODE_RQS_MASK		0x3ff
@@ -161,34 +147,34 @@ struct eqos_mtl_regs {
 #define EQOS_MTL_RXQ0_DEBUG_PRXQ_SHIFT			16
 #define EQOS_MTL_RXQ0_DEBUG_PRXQ_MASK			0x7fff
 #define EQOS_MTL_RXQ0_DEBUG_RXQSTS_SHIFT		4
-#define EQOS_MTL_RXQ0_DEBUG_RXQSTS_MASK			3
+#define EQOS_MTL_RXQ0_DEBUG_RXQSTS_MASK		3
 
 #define EQOS_DMA_REGS_BASE 0x1000
 struct eqos_dma_regs {
-	uint32_t mode;					/* 0x1000 */
-	uint32_t sysbus_mode;				/* 0x1004 */
-	uint32_t unused_1008[(0x1100 - 0x1008) / 4];	/* 0x1008 */
-	uint32_t ch0_control;				/* 0x1100 */
-	uint32_t ch0_tx_control;			/* 0x1104 */
-	uint32_t ch0_rx_control;			/* 0x1108 */
-	uint32_t unused_110c;				/* 0x110c */
-	uint32_t ch0_txdesc_list_haddress;		/* 0x1110 */
-	uint32_t ch0_txdesc_list_address;		/* 0x1114 */
-	uint32_t ch0_rxdesc_list_haddress;		/* 0x1118 */
-	uint32_t ch0_rxdesc_list_address;		/* 0x111c */
-	uint32_t ch0_txdesc_tail_pointer;		/* 0x1120 */
-	uint32_t unused_1124;				/* 0x1124 */
-	uint32_t ch0_rxdesc_tail_pointer;		/* 0x1128 */
-	uint32_t ch0_txdesc_ring_length;		/* 0x112c */
-	uint32_t ch0_rxdesc_ring_length;		/* 0x1130 */
+	uint32_t mode;
+	uint32_t sysbus_mode;
+	uint32_t unused_1008[(0x1100 - 0x1008) / 4];
+	uint32_t ch0_control;
+	uint32_t ch0_tx_control;
+	uint32_t ch0_rx_control;
+	uint32_t unused_110c;
+	uint32_t ch0_txdesc_list_haddress;
+	uint32_t ch0_txdesc_list_address;
+	uint32_t ch0_rxdesc_list_haddress;
+	uint32_t ch0_rxdesc_list_address;
+	uint32_t ch0_txdesc_tail_pointer;
+	uint32_t unused_1124;
+	uint32_t ch0_rxdesc_tail_pointer;
+	uint32_t ch0_txdesc_ring_length;
+	uint32_t ch0_rxdesc_ring_length;
 };
 
 #define EQOS_DMA_MODE_SWR				BIT(0)
 
-#define EQOS_DMA_SYSBUS_MODE_RB				BIT(15)
-#define EQOS_DMA_SYSBUS_MODE_MB				BIT(14)
+#define EQOS_DMA_SYSBUS_MODE_RB			BIT(15)
+#define EQOS_DMA_SYSBUS_MODE_MB			BIT(14)
 #define EQOS_DMA_SYSBUS_MODE_AAL			BIT(12)
-#define EQOS_DMA_SYSBUS_MODE_FB				BIT(0)
+#define EQOS_DMA_SYSBUS_MODE_FB			BIT(0)
 
 #define EQOS_DMA_CH0_CONTROL_DSL			BIT(18)
 #define EQOS_DMA_CH0_CONTROL_PBLX8			BIT(16)
@@ -206,14 +192,12 @@ struct eqos_dma_regs {
 #define EQOS_DMA_CH0_RX_CONTROL_SR			BIT(0)
 #define EQOS_DMA_CH0_RX_CONTROL_RPF			BIT(31)
 
-
-/* These registers are Tegra186-specific */
 #define EQOS_TEGRA186_REGS_BASE 0x8800
 struct eqos_tegra186_regs {
-	uint32_t sdmemcomppadctrl;			/* 0x8800 */
-	uint32_t auto_cal_config;			/* 0x8804 */
-	uint32_t unused_8808;				/* 0x8808 */
-	uint32_t auto_cal_status;			/* 0x880c */
+	uint32_t sdmemcomppadctrl;
+	uint32_t auto_cal_config;
+	uint32_t unused_8808;
+	uint32_t auto_cal_status;
 };
 
 #define EQOS_SDMEMCOMPPADCTRL_PAD_E_INPUT_OR_E_PWRD	BIT(31)
@@ -227,7 +211,6 @@ struct eqos_tegra186_regs {
 
 #define EQOS_DESCRIPTOR_WORDS	4
 #define EQOS_DESCRIPTOR_SIZE	(EQOS_DESCRIPTOR_WORDS * 4)
-/* We assume ARCH_DMA_MINALIGN >= 16; 16 is the EQOS HW minimum */
 #define EQOS_DESCRIPTOR_ALIGN	ARCH_DMA_MINALIGN
 #define EQOS_DESCRIPTORS_TX	8
 #define EQOS_DESCRIPTORS_RX	8
@@ -238,16 +221,6 @@ struct eqos_tegra186_regs {
 #define EQOS_MAX_PACKET_SIZE	ALIGN(1528, ARCH_DMA_MINALIGN)
 #define EQOS_RX_BUFFER_SIZE	(EQOS_DESCRIPTORS_RX * EQOS_MAX_PACKET_SIZE)
 
-/*
- * Warn if the cache-line size is larger than the descriptor size. In such
- * cases the driver will likely fail because the CPU needs to flush the cache
- * when requeuing RX buffers, therefore descriptors written by the hardware
- * may be discarded. Architectures with full IO coherence, such as x86, do not
- * experience this issue, and hence are excluded from this condition.
- *
- * This can be fixed by defining CONFIG_SYS_NONCACHED_MEMORY which will cause
- * the driver to allocate descriptors from a pool of non-cached memory.
- */
 #if EQOS_DESCRIPTOR_SIZE < ARCH_DMA_MINALIGN
 #if !defined(CONFIG_SYS_NONCACHED_MEMORY) && \
 	!defined(CONFIG_SYS_DCACHE_OFF) && !defined(CONFIG_X86)
@@ -268,8 +241,19 @@ struct eqos_desc {
 #define EQOS_DESC3_LD		BIT(28)
 #define EQOS_DESC3_BUF1V	BIT(24)
 
+struct dw_eth_pdata {
+	struct eth_pdata eth_pdata;
+	u32 reset_delays[3];
+};
+
+enum eqos_config_type {
+	EQOS_CONFIG_TEGRA186,
+	EQOS_CONFIG_STM32H7,
+};
+
 struct eqos_config {
 	bool reg_access_always_ok;
+	enum eqos_config_type config_type;
 };
 
 struct eqos_priv {
@@ -283,8 +267,8 @@ struct eqos_priv {
 	struct reset_ctl reset_ctl;
 	struct gpio_desc phy_reset_gpio;
 #ifdef CONFIG_CLK
-	struct clk *clocks;	/* clock list */
-	int clock_count;	/* number of clock in clock list */
+	struct clk *clocks;
+	int clock_count;
 #endif
 	struct clk clk_master_bus;
 	struct clk clk_rx;
@@ -293,6 +277,7 @@ struct eqos_priv {
 	struct clk clk_slave_bus;
 	struct mii_dev *mii;
 	struct phy_device *phy;
+	ofnode phy_node;
 	void *descs;
 	struct eqos_desc *tx_descs;
 	struct eqos_desc *rx_descs;
@@ -305,30 +290,22 @@ struct eqos_priv {
 };
 
 #ifdef CONFIG_STM32H7
-struct dw_eth_pdata {
-	struct eth_pdata eth_pdata;
-	u32 reset_delays[3];
-};
+#define STM32H7_SYSCFG_BASE		0x58000400
+#define STM32H7_SYSCFG_PMC_REG		(STM32H7_SYSCFG_BASE + 0x04)
+#define STM32H7_SYSCFG_PMC_MII_RMII_SEL	BIT(23)
+
+#define STM32H7_RCC_BASE		0x58024400
+#define STM32H7_RCC_AHB1ENR		(STM32H7_RCC_BASE + 0xd8)
+#define STM32H7_RCC_AHB1RSTR		(STM32H7_RCC_BASE + 0x80)
+#define STM32H7_RCC_APB4ENR		(STM32H7_RCC_BASE + 0xf4)
+
+#define STM32H7_RCC_AHB1ENR_ETH1EN	(BIT(15) | BIT(16) | BIT(17))
+#define STM32H7_RCC_AHB1RSTR_ETH1MAC	BIT(15)
+#define STM32H7_RCC_APB4ENR_SYSCFG	BIT(1)
+
+#define STM32H7_ETH_MAC_BASE		0x40028000
 #endif
 
-/*
- * TX and RX descriptors are 16 bytes. This causes problems with the cache
- * maintenance on CPUs where the cache-line size exceeds the size of these
- * descriptors. What will happen is that when the driver receives a packet
- * it will be immediately requeued for the hardware to reuse. The CPU will
- * therefore need to flush the cache-line containing the descriptor, which
- * will cause all other descriptors in the same cache-line to be flushed
- * along with it. If one of those descriptors had been written to by the
- * device those changes (and the associated packet) will be lost.
- *
- * To work around this, we make use of non-cached memory if available. If
- * descriptors are mapped uncached there's no need to manually flush them
- * or invalidate them.
- *
- * Note that this only applies to descriptors. The packet data buffers do
- * not have the same constraints since they are 1536 bytes large, so they
- * are unlikely to share cache-lines.
- */
 static void *eqos_alloc_descs(unsigned int num)
 {
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
@@ -342,7 +319,6 @@ static void *eqos_alloc_descs(unsigned int num)
 static void eqos_free_descs(void *descs)
 {
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
-	/* FIXME: noncached_alloc() has no opposite */
 #else
 	free(descs);
 #endif
@@ -407,7 +383,7 @@ static int eqos_mdio_read(struct mii_dev *bus, int mdio_addr, int mdio_devad,
 		EQOS_MAC_MDIO_ADDRESS_C45E;
 	val |= (mdio_addr << EQOS_MAC_MDIO_ADDRESS_PA_SHIFT) |
 		(mdio_reg << EQOS_MAC_MDIO_ADDRESS_RDA_SHIFT) |
-		(1 <<
+		(EQOS_MAC_MDIO_ADDRESS_CR_20_35 <<
 		 EQOS_MAC_MDIO_ADDRESS_CR_SHIFT) |
 		(EQOS_MAC_MDIO_ADDRESS_GOC_READ <<
 		 EQOS_MAC_MDIO_ADDRESS_GOC_SHIFT) |
@@ -423,7 +399,7 @@ static int eqos_mdio_read(struct mii_dev *bus, int mdio_addr, int mdio_devad,
 	}
 
 	val = readl(&eqos->mac_regs->mdio_data);
-	//val &= EQOS_MAC_MDIO_DATA_GD_MASK;
+	val &= EQOS_MAC_MDIO_DATA_GD_MASK;
 
 	debug("%s: val=%x\n", __func__, val);
 
@@ -464,7 +440,7 @@ static int eqos_mdio_write(struct mii_dev *bus, int mdio_addr, int mdio_devad,
 
 	ret = eqos_mdio_wait_idle(eqos);
 	if (ret) {
-		debug("MDIO read didn't complete");
+		debug("MDIO write didn't complete");
 		return ret;
 	}
 
@@ -480,11 +456,11 @@ static int eqos_mdio_reset(struct mii_dev *bus)
 	struct dw_eth_pdata *pdata = dev_get_platdata(dev);
 	int ret;
 
-	debug("%s ..............\n", __func__);
+	debug("%s\n", __func__);
+
 	if (!dm_gpio_is_valid(&eqos->phy_reset_gpio))
 		return 0;
 
-	/* reset the phy */
 	ret = dm_gpio_set_value(&eqos->phy_reset_gpio, 0);
 	if (ret)
 		return ret;
@@ -507,7 +483,6 @@ static int eqos_mdio_reset(struct mii_dev *bus)
 }
 #endif
 
-
 static int eqos_start_resets_tegra186(struct udevice *dev)
 {
 	struct eqos_priv *eqos = dev_get_priv(dev);
@@ -528,21 +503,32 @@ static int eqos_start_resets_tegra186(struct udevice *dev)
 		debug("dm_gpio_set_value(phy_reset, deassert) failed: %d", ret);
 		return ret;
 	}
-/*
-	ret = reset_assert(&eqos->reset_ctl);
+
+	debug("%s: OK\n", __func__);
+	return 0;
+}
+
+static int eqos_start_resets_stm32h7(struct udevice *dev)
+{
+	struct eqos_priv *eqos = dev_get_priv(dev);
+	int ret;
+
+	debug("%s(dev=%p):\n", __func__, dev);
+
+	ret = dm_gpio_set_value(&eqos->phy_reset_gpio, 1);
 	if (ret < 0) {
-		debug("reset_assert() failed: %d", ret);
+		debug("dm_gpio_set_value(phy_reset, assert) failed: %d", ret);
 		return ret;
 	}
 
 	udelay(2);
 
-	ret = reset_deassert(&eqos->reset_ctl);
+	ret = dm_gpio_set_value(&eqos->phy_reset_gpio, 0);
 	if (ret < 0) {
-		debug("reset_deassert() failed: %d", ret);
+		debug("dm_gpio_set_value(phy_reset, deassert) failed: %d", ret);
 		return ret;
 	}
-*/
+
 	debug("%s: OK\n", __func__);
 	return 0;
 }
@@ -552,6 +538,15 @@ static int eqos_stop_resets_tegra186(struct udevice *dev)
 	struct eqos_priv *eqos = dev_get_priv(dev);
 
 	reset_assert(&eqos->reset_ctl);
+	dm_gpio_set_value(&eqos->phy_reset_gpio, 1);
+
+	return 0;
+}
+
+static int eqos_stop_resets_stm32h7(struct udevice *dev)
+{
+	struct eqos_priv *eqos = dev_get_priv(dev);
+
 	dm_gpio_set_value(&eqos->phy_reset_gpio, 1);
 
 	return 0;
@@ -635,7 +630,6 @@ static int eqos_set_half_duplex(struct udevice *dev)
 
 	clrbits_le32(&eqos->mac_regs->configuration, EQOS_MAC_CONFIGURATION_DM);
 
-	/* WAR: Flush TX queue when switching to half-duplex */
 	setbits_le32(&eqos->mtl_regs->txq0_operation_mode,
 		     EQOS_MTL_TXQ0_OPERATION_MODE_FTQ);
 
@@ -701,7 +695,7 @@ static int eqos_set_tx_clk_speed_tegra186(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	ret = 0;//clk_set_rate(&eqos->clk_tx, rate);
+	ret = clk_set_rate(&eqos->clk_tx, rate);
 	if (ret < 0) {
 		debug("clk_set_rate(tx_clk, %lu) failed: %d", rate, ret);
 		return ret;
@@ -710,7 +704,7 @@ static int eqos_set_tx_clk_speed_tegra186(struct udevice *dev)
 	return 0;
 }
 
-static int eqos_adjust_link(struct udevice *dev)
+static int eqos_adjust_link_tegra186(struct udevice *dev)
 {
 	struct eqos_priv *eqos = dev_get_priv(dev);
 	int ret;
@@ -756,7 +750,7 @@ static int eqos_adjust_link(struct udevice *dev)
 			return ret;
 		}
 	} else {
-		ret = 0;//eqos_disable_calibration_tegra186(dev);
+		ret = eqos_disable_calibration_tegra186(dev);
 		if (ret < 0) {
 			debug("eqos_disable_calibration_tegra186() failed: %d",
 			      ret);
@@ -767,6 +761,41 @@ static int eqos_adjust_link(struct udevice *dev)
 	ret = eqos_set_tx_clk_speed_tegra186(dev);
 	if (ret < 0) {
 		debug("eqos_set_tx_clk_speed_tegra186() failed: %d", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int eqos_adjust_link_stm32h7(struct udevice *dev)
+{
+	struct eqos_priv *eqos = dev_get_priv(dev);
+	int ret;
+
+	debug("%s(dev=%p):\n", __func__, dev);
+
+	if (eqos->phy->duplex)
+		ret = eqos_set_full_duplex(dev);
+	else
+		ret = eqos_set_half_duplex(dev);
+	if (ret < 0) {
+		debug("eqos_set_*_duplex() failed: %d", ret);
+		return ret;
+	}
+
+	switch (eqos->phy->speed) {
+	case SPEED_100:
+		ret = eqos_set_mii_speed_100(dev);
+		break;
+	case SPEED_10:
+		ret = eqos_set_mii_speed_10(dev);
+		break;
+	default:
+		debug("invalid speed %d", eqos->phy->speed);
+		return -EINVAL;
+	}
+	if (ret < 0) {
+		debug("eqos_set_*mii_speed*() failed: %d", ret);
 		return ret;
 	}
 
@@ -794,12 +823,10 @@ static int eqos_probe_resources_core(struct udevice *dev)
 
 	eqos->tx_dma_buf = memalign(EQOS_BUFFER_ALIGN, EQOS_MAX_PACKET_SIZE);
 	if (!eqos->tx_dma_buf) {
-	
 		debug("%s: memalign(tx_dma_buf) failed\n", __func__);
 		ret = -ENOMEM;
 		goto err_free_descs;
 	}
-	debug("%s: rx_dma_buf=%p\n", __func__, eqos->rx_dma_buf);
 
 	eqos->rx_dma_buf = memalign(EQOS_BUFFER_ALIGN, EQOS_RX_BUFFER_SIZE);
 	if (!eqos->rx_dma_buf) {
@@ -807,7 +834,6 @@ static int eqos_probe_resources_core(struct udevice *dev)
 		ret = -ENOMEM;
 		goto err_free_tx_dma_buf;
 	}
-	debug("%s: tx_dma_buf=%p\n", __func__, eqos->tx_dma_buf);
 
 	eqos->rx_pkt = malloc(EQOS_MAX_PACKET_SIZE);
 	if (!eqos->rx_pkt) {
@@ -838,32 +864,9 @@ static int eqos_write_hwaddr(struct udevice *dev)
 	struct eqos_priv *eqos = dev_get_priv(dev);
 	uint32_t val;
 
-	/*
-	 * This function may be called before start() or after stop(). At that
-	 * time, on at least some configurations of the EQoS HW, all clocks to
-	 * the EQoS HW block will be stopped, and a reset signal applied. If
-	 * any register access is attempted in this state, bus timeouts or CPU
-	 * hangs may occur. This check prevents that.
-	 *
-	 * A simple solution to this problem would be to not implement
-	 * write_hwaddr(), since start() always writes the MAC address into HW
-	 * anyway. However, it is desirable to implement write_hwaddr() to
-	 * support the case of SW that runs subsequent to U-Boot which expects
-	 * the MAC address to already be programmed into the EQoS registers,
-	 * which must happen irrespective of whether the U-Boot user (or
-	 * scripts) actually made use of the EQoS device, and hence
-	 * irrespective of whether start() was ever called.
-	 *
-	 * Note that this requirement by subsequent SW is not valid for
-	 * Tegra186, and is likely not valid for any non-PCI instantiation of
-	 * the EQoS HW block. This function is implemented solely as
-	 * future-proofing with the expectation the driver will eventually be
-	 * ported to some system where the expectation above is true.
-	 */
 	if (!eqos->config->reg_access_always_ok && !eqos->reg_access_ok)
 		return 0;
 
-	/* Update the MAC address */
 	val = (plat->enetaddr[5] << 8) |
 		(plat->enetaddr[4]);
 	writel(val, &eqos->mac_regs->address0_high);
@@ -880,7 +883,6 @@ static int eqos_start(struct udevice *dev)
 {
 	struct eqos_priv *eqos = dev_get_priv(dev);
 	int ret, i;
-	ulong rate;
 	u32 val, tx_fifo_sz, rx_fifo_sz, tqs, rqs, pbl;
 	ulong last_rx_desc;
 
@@ -889,16 +891,19 @@ static int eqos_start(struct udevice *dev)
 	eqos->tx_desc_idx = 0;
 	eqos->rx_desc_idx = 0;
 
-/*
-	ret = eqos_start_clks_tegra186(dev);
-	if (ret < 0) {
-		debug("eqos_start_clks_tegra186() failed: %d", ret);
-		goto err;
+	switch (eqos->config->config_type) {
+	case EQOS_CONFIG_TEGRA186:
+		ret = eqos_start_resets_tegra186(dev);
+		break;
+	case EQOS_CONFIG_STM32H7:
+		ret = eqos_start_resets_stm32h7(dev);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
 	}
-*/
-	ret = eqos_start_resets_tegra186(dev);
 	if (ret < 0) {
-		debug("eqos_start_resets_tegra186() failed: %d", ret);
+		debug("eqos_start_resets() failed: %d", ret);
 		return ret;
 	}
 
@@ -912,15 +917,18 @@ static int eqos_start(struct udevice *dev)
 		debug("EQOS_DMA_MODE_SWR stuck");
 		goto err_stop_resets;
 	}
-/*
-	ret = eqos_calibrate_pads_tegra186(dev);
-	if (ret < 0) {
-		debug("eqos_calibrate_pads_tegra186() failed: %d", ret);
-		goto err_stop_resets;
+
+	if (eqos->config->config_type == EQOS_CONFIG_TEGRA186) {
+		ret = eqos_calibrate_pads_tegra186(dev);
+		if (ret < 0) {
+			debug("eqos_calibrate_pads_tegra186() failed: %d", ret);
+			goto err_stop_resets;
+		}
+		rate = eqos_get_tick_clk_rate_tegra186(dev);
+		val = (rate / 1000000) - 1;
+	} else {
+		val = (224000000 / 1000000) - 1;
 	}
-*/
-	//rate = eqos_get_tick_clk_rate_tegra186(dev);
-	val = (224000000 / 1000000) - 1;
 	writel(val, &eqos->mac_regs->us_tic_counter);
 
 	eqos->phy = phy_connect(eqos->mii, 0, dev, 0);
@@ -944,7 +952,17 @@ static int eqos_start(struct udevice *dev)
 		goto err_shutdown_phy;
 	}
 
-	ret = eqos_adjust_link(dev);
+	switch (eqos->config->config_type) {
+	case EQOS_CONFIG_TEGRA186:
+		ret = eqos_adjust_link_tegra186(dev);
+		break;
+	case EQOS_CONFIG_STM32H7:
+		ret = eqos_adjust_link_stm32h7(dev);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
 	if (ret < 0) {
 		debug("eqos_adjust_link() failed: %d", ret);
 		goto err_shutdown_phy;
@@ -952,34 +970,24 @@ static int eqos_start(struct udevice *dev)
 
 	/* Configure MTL */
 
-	/* Enable Store and Forward mode for TX */
-	/* Program Tx operating mode */
 	setbits_le32(&eqos->mtl_regs->txq0_operation_mode,
 		     EQOS_MTL_TXQ0_OPERATION_MODE_TSF |
 		     (EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_ENABLED <<
 		      EQOS_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT));
 
-	/* Transmit Queue weight */
-	//writel(0x10, &eqos->mtl_regs->txq0_quantum_weight); //stm32H7 no have
-
-	/* Enable Store and Forward mode for RX, since no jumbo frame */
 	setbits_le32(&eqos->mtl_regs->rxq0_operation_mode,
-		     EQOS_MTL_RXQ0_OPERATION_MODE_RSF | EQOS_MTL_RXQ0_OPERATION_MODE_FUP);
+		     EQOS_MTL_RXQ0_OPERATION_MODE_RSF |
+		     EQOS_MTL_RXQ0_OPERATION_MODE_FUP);
 
-	/* Transmit/Receive queue fifo size; use all RAM for 1 queue */
 	val = readl(&eqos->mac_regs->hw_feature1);
 	tx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_SHIFT) &
 		EQOS_MAC_HW_FEATURE1_TXFIFOSIZE_MASK;
 	rx_fifo_sz = (val >> EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_SHIFT) &
 		EQOS_MAC_HW_FEATURE1_RXFIFOSIZE_MASK;
 
-	/*
-	 * r/tx_fifo_sz is encoded as log2(n / 128). Undo that by shifting.
-	 * r/tqs is encoded as (n / 256) - 1.
-	 */
 	tqs = (128 << tx_fifo_sz) / 256 - 1;
 	rqs = (128 << rx_fifo_sz) / 256 - 1;
-	// tqs=rqs=7
+
 	clrsetbits_le32(&eqos->mtl_regs->txq0_operation_mode,
 			EQOS_MTL_TXQ0_OPERATION_MODE_TQS_MASK <<
 			EQOS_MTL_TXQ0_OPERATION_MODE_TQS_SHIFT,
@@ -990,68 +998,37 @@ static int eqos_start(struct udevice *dev)
 			rqs << EQOS_MTL_RXQ0_OPERATION_MODE_RQS_SHIFT);
 
 	/* Configure MAC */
-	//clrsetbits_le32(&eqos->mac_regs->rxq_ctrl0,
-	//		EQOS_MAC_RXQ_CTRL0_RXQ0EN_MASK <<
-	//		EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT,
-	//		EQOS_MAC_RXQ_CTRL0_RXQ0EN_ENABLED_DCB <<
-	//		EQOS_MAC_RXQ_CTRL0_RXQ0EN_SHIFT);
-	/* Set TX flow control parameters */
-	/* Set Pause Time */
-	//setbits_le32(&eqos->mac_regs->q0_tx_flow_ctrl,
-		     //0xffff << EQOS_MAC_Q0_TX_FLOW_CTRL_PT_SHIFT);
-	/* Assign priority for TX flow control */
-	//clrbits_le32(&eqos->mac_regs->txq_prty_map0,
-		    // EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_MASK <<
-		     //EQOS_MAC_TXQ_PRTY_MAP0_PSTQ0_SHIFT);
-	/* Assign priority for RX flow control */
-	//clrbits_le32(&eqos->mac_regs->rxq_ctrl2,
-	//	     EQOS_MAC_RXQ_CTRL2_PSRQ0_MASK <<
-	//	     EQOS_MAC_RXQ_CTRL2_PSRQ0_SHIFT);
-	/* Enable flow control */
-
-	//setbits_le32(&eqos->mac_regs->q0_tx_flow_ctrl,
-		//     EQOS_MAC_Q0_TX_FLOW_CTRL_TFE);
-
-	//setbits_le32(&eqos->mac_regs->rx_flow_ctrl,
-	     //EQOS_MAC_RX_FLOW_CTRL_RFE);
 	clrsetbits_le32(&eqos->mac_regs->configuration,
 			EQOS_MAC_CONFIGURATION_GPSLCE |
 			EQOS_MAC_CONFIGURATION_WD |
 			EQOS_MAC_CONFIGURATION_JD |
 			EQOS_MAC_CONFIGURATION_JE |
-			EQOS_MAC_CONFIGURATION_PS ,
+			EQOS_MAC_CONFIGURATION_PS,
 			EQOS_MAC_CONFIGURATION_CST |
-			EQOS_MAC_CONFIGURATION_ACS|
+			EQOS_MAC_CONFIGURATION_ACS |
 			EQOS_MAC_CONFIGURATION_IPC |
 			EQOS_MAC_CONFIGURATION_ARPEN |
-			3 << 28);
-			
-	setbits_le32(&eqos->mac_regs->MACECR,
-		    1 << 24 | 0X618);
+			EQOS_MAC_CONFIGURATION_SARC);
+
+	if (eqos->config->config_type == EQOS_CONFIG_STM32H7) {
+		setbits_le32(&eqos->mac_regs->MACECR,
+			     BIT(24) | 0x618);
+	}
+
 	eqos_write_hwaddr(dev);
 
 	/* Configure DMA */
 
-	/* Enable OSP mode */
-	//setbits_le32(&eqos->dma_regs->ch0_tx_control,
-	//	     EQOS_DMA_CH0_TX_CONTROL_OSP);
-
 	clrsetbits_le32(&eqos->dma_regs->ch0_rx_control,
-			0x3fff <<
+			EQOS_DMA_CH0_RX_CONTROL_RBSZ_MASK <<
 			EQOS_DMA_CH0_RX_CONTROL_RBSZ_SHIFT,
 			EQOS_MAX_PACKET_SIZE <<
 			EQOS_DMA_CH0_RX_CONTROL_RBSZ_SHIFT);
 
+	if (eqos->config->config_type == EQOS_CONFIG_STM32H7) {
+		setbits_le32(&eqos->dma_regs->ch0_control, 0x212 << 0);
+	}
 
-	setbits_le32(&eqos->dma_regs->ch0_control,
-		     0x212 << 0);
-
-	/*
-	 * Burst length must be < 1/2 FIFO size.
-	 * FIFO size in tqs is encoded as (n / 256) - 1.
-	 * Each burst is n * 8 (PBLX8) * 16 (AXI width) == 128 bytes.
-	 * Half of n * 256 is n * 128, so pbl == tqs, modulo the -1.
-	 */
 	pbl = 32;
 	clrsetbits_le32(&eqos->dma_regs->ch0_tx_control,
 			EQOS_DMA_CH0_TX_CONTROL_TXPBL_MASK <<
@@ -1061,10 +1038,9 @@ static int eqos_start(struct udevice *dev)
 	clrsetbits_le32(&eqos->dma_regs->ch0_rx_control,
 			EQOS_DMA_CH0_RX_CONTROL_RXPBL_MASK <<
 			EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT,
-			4 << EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT | EQOS_DMA_CH0_RX_CONTROL_RPF);
+			4 << EQOS_DMA_CH0_RX_CONTROL_RXPBL_SHIFT |
+			EQOS_DMA_CH0_RX_CONTROL_RPF);
 
-	/* DMA performance configuration */
-	// Fixed Burst Length  
 	val = EQOS_DMA_SYSBUS_MODE_FB | EQOS_DMA_SYSBUS_MODE_AAL;
 	writel(val, &eqos->dma_regs->sysbus_mode);
 
@@ -1099,13 +1075,6 @@ static int eqos_start(struct udevice *dev)
 	setbits_le32(&eqos->dma_regs->ch0_rx_control,
 		     EQOS_DMA_CH0_RX_CONTROL_SR);
 
-	/* TX tail pointer not written until we need to TX a packet */
-	/*
-	 * Point RX tail pointer at last descriptor. Ideally, we'd point at the
-	 * first descriptor, implying all descriptors were available. However,
-	 * that's not distinguishable from none of the descriptors being
-	 * available.
-	 */
 	last_rx_desc = (ulong)&(eqos->rx_descs[(EQOS_DESCRIPTORS_RX - 1)]);
 	writel(last_rx_desc, &eqos->dma_regs->ch0_rxdesc_tail_pointer);
 
@@ -1118,8 +1087,16 @@ err_shutdown_phy:
 	phy_shutdown(eqos->phy);
 	eqos->phy = NULL;
 err_stop_resets:
-	eqos_stop_resets_tegra186(dev);
-err:
+	switch (eqos->config->config_type) {
+	case EQOS_CONFIG_TEGRA186:
+		eqos_stop_resets_tegra186(dev);
+		break;
+	case EQOS_CONFIG_STM32H7:
+		eqos_stop_resets_stm32h7(dev);
+		break;
+	default:
+		break;
+	}
 	debug("FAILED: %d", ret);
 	return ret;
 }
@@ -1130,17 +1107,15 @@ void eqos_stop(struct udevice *dev)
 	int i;
 
 	debug("%s(dev=%p):\n", __func__, dev);
-	//return;
+
 	if (!eqos->started)
 		return;
 	eqos->started = false;
 	eqos->reg_access_ok = false;
 
-	/* Disable TX DMA */
 	clrbits_le32(&eqos->dma_regs->ch0_tx_control,
 		     EQOS_DMA_CH0_TX_CONTROL_ST);
 
-	/* Wait for TX all packets to drain out of MTL */
 	for (i = 0; i < 1000000; i++) {
 		u32 val = readl(&eqos->mtl_regs->txq0_debug);
 		u32 trcsts = (val >> EQOS_MTL_TXQ0_DEBUG_TRCSTS_SHIFT) &
@@ -1150,11 +1125,9 @@ void eqos_stop(struct udevice *dev)
 			break;
 	}
 
-	/* Turn off MAC TX and RX */
 	clrbits_le32(&eqos->mac_regs->configuration,
 		     EQOS_MAC_CONFIGURATION_TE | EQOS_MAC_CONFIGURATION_RE);
 
-	/* Wait for all RX packets to drain out of MTL */
 	for (i = 0; i < 1000000; i++) {
 		u32 val = readl(&eqos->mtl_regs->rxq0_debug);
 		u32 prxq = (val >> EQOS_MTL_RXQ0_DEBUG_PRXQ_SHIFT) &
@@ -1165,7 +1138,6 @@ void eqos_stop(struct udevice *dev)
 			break;
 	}
 
-	/* Turn off RX DMA */
 	clrbits_le32(&eqos->dma_regs->ch0_rx_control,
 		     EQOS_DMA_CH0_RX_CONTROL_SR);
 
@@ -1173,8 +1145,18 @@ void eqos_stop(struct udevice *dev)
 		phy_shutdown(eqos->phy);
 		eqos->phy = NULL;
 	}
-	//eqos_stop_resets_tegra186(dev);
-	//eqos_stop_clks_tegra186(dev);
+
+	switch (eqos->config->config_type) {
+	case EQOS_CONFIG_TEGRA186:
+		eqos_stop_resets_tegra186(dev);
+		break;
+	case EQOS_CONFIG_STM32H7:
+		eqos_stop_resets_stm32h7(dev);
+		break;
+	default:
+		break;
+	}
+
 	debug("%s: OK\n", __func__);
 }
 
@@ -1197,12 +1179,9 @@ int eqos_send(struct udevice *dev, void *packet, int length)
 	tx_desc->des0 = (ulong)eqos->tx_dma_buf;
 	tx_desc->des1 = 0;
 	tx_desc->des2 = length;
-	/*
-	 * Make sure that if HW sees the _OWN write below, it will see all the
-	 * writes to the rest of the descriptor too.
-	 */
 	mb();
-	tx_desc->des3 = EQOS_DESC3_OWN | EQOS_DESC3_FD | EQOS_DESC3_LD | length;
+	tx_desc->des3 = EQOS_DESC3_OWN | EQOS_DESC3_FD | EQOS_DESC3_LD |
+			length;
 	eqos_flush_desc(tx_desc);
 
 	writel((ulong)(tx_desc + 1), &eqos->dma_regs->ch0_txdesc_tail_pointer);
@@ -1226,21 +1205,19 @@ int eqos_recv(struct udevice *dev, int flags, uchar **packetp)
 	int length;
 
 	debug("%s(dev=%p, flags=%x):\n", __func__, dev, flags);
-	debug("%s(eqos->rx_desc_idx=%d)\n", __func__,eqos->rx_desc_idx);
 
 	rx_desc = &(eqos->rx_descs[eqos->rx_desc_idx]);
 
-	invalidate_dcache_range(rx_desc, rx_desc+16);
+	eqos_inval_desc(rx_desc);
 
-	debug("%s Channel status =0x%x  des3=0x%x \n", __func__,readl(0x40029160) ,rx_desc->des3);
 	if (rx_desc->des3 & EQOS_DESC3_OWN) {
 		debug("%s: RX packet not available\n", __func__);
 		return -EAGAIN;
 	}
+
 	*packetp = eqos->rx_dma_buf +
 		(eqos->rx_desc_idx * EQOS_MAX_PACKET_SIZE);
 	length = rx_desc->des3 & 0x7fff;
-	debug("%s: *packetp=%p, length=%d\n", __func__, *packetp, length);
 
 	eqos_inval_buffer(*packetp, length);
 
@@ -1267,10 +1244,6 @@ int eqos_free_pkt(struct udevice *dev, uchar *packet, int length)
 	rx_desc->des0 = (u32)(ulong)packet;
 	rx_desc->des1 = 0;
 	rx_desc->des2 = 0;
-	/*
-	 * Make sure that if HW sees the _OWN write below, it will see all the
-	 * writes to the rest of the descriptor too.
-	 */
 	mb();
 	rx_desc->des3 |= EQOS_DESC3_OWN | EQOS_DESC3_BUF1V;
 	eqos_flush_desc(rx_desc);
@@ -1316,18 +1289,59 @@ static int eqos_remove_resources_tegra186(struct udevice *dev)
 	return 0;
 }
 
+static int eqos_remove_resources_stm32h7(struct udevice *dev)
+{
+	struct eqos_priv *eqos = dev_get_priv(dev);
+
+	debug("%s(dev=%p):\n", __func__, dev);
+
+#ifdef CONFIG_CLK
+	clk_release_all(eqos->clocks, eqos->clock_count);
+#endif
+	dm_gpio_free(dev, &eqos->phy_reset_gpio);
+
+	debug("%s: OK\n", __func__);
+	return 0;
+}
+
+static void eqos_probe_stm32h7_syscfg(struct udevice *dev)
+{
+	u32 reg;
+
+	setbits_le32(STM32H7_RCC_APB4ENR, STM32H7_RCC_APB4ENR_SYSCFG);
+
+	reg = readl(STM32H7_SYSCFG_PMC_REG);
+	debug("%s: SYSCFG PMC before = 0x%x\n", __func__, reg);
+
+	setbits_le32(STM32H7_SYSCFG_PMC_REG, STM32H7_SYSCFG_PMC_MII_RMII_SEL);
+
+	reg = readl(STM32H7_SYSCFG_PMC_REG);
+	debug("%s: SYSCFG PMC after = 0x%x\n", __func__, reg);
+}
+
+static void eqos_probe_stm32h7_eth_clocks(struct udevice *dev)
+{
+	u32 reg;
+
+	setbits_le32(STM32H7_RCC_AHB1ENR, STM32H7_RCC_AHB1ENR_ETH1EN);
+
+	reg = readl(STM32H7_RCC_AHB1ENR);
+	debug("%s: RCC AHB1ENR = 0x%x\n", __func__, reg);
+}
+
 static int eqos_probe(struct udevice *dev)
 {
 	struct eqos_priv *eqos = dev_get_priv(dev);
-	int ret;
-/////////////////////////////////////////////////////
-//
-////////////////////////////////////////////////////
 	struct dw_eth_pdata *dw_pdata = dev_get_platdata(dev);
 	struct eth_pdata *pdata = &dw_pdata->eth_pdata;
 	const char *phy_mode;
 	int reset_flags = GPIOD_IS_OUT;
+	int ret;
 
+	debug("%s(dev=%p):\n", __func__, dev);
+
+	eqos->dev = dev;
+	eqos->config = (void *)dev_get_driver_data(dev);
 
 	pdata->iobase = dev_read_addr(dev);
 	pdata->phy_interface = -1;
@@ -1354,11 +1368,6 @@ static int eqos_probe(struct udevice *dev)
 		ret = 0;
 	}
 #endif
-//////////////////////////////////////////////////
-	debug("%s(dev=%p):\n", __func__, dev);
-
-	eqos->dev = dev;
-	eqos->config = (void *)dev_get_driver_data(dev);
 
 	eqos->regs = pdata->iobase;
 	if (eqos->regs == FDT_ADDR_T_NONE) {
@@ -1368,57 +1377,56 @@ static int eqos_probe(struct udevice *dev)
 	eqos->mac_regs = (void *)(eqos->regs + EQOS_MAC_REGS_BASE);
 	eqos->mtl_regs = (void *)(eqos->regs + EQOS_MTL_REGS_BASE);
 	eqos->dma_regs = (void *)(eqos->regs + EQOS_DMA_REGS_BASE);
-	//eqos->tegra186_regs = (void *)(eqos->regs + EQOS_TEGRA186_REGS_BASE);
-	debug("%s mac_regs = %x mtl_regs = %x dma_regs = %x.........\n", __func__,eqos->mac_regs,eqos->mtl_regs,eqos->dma_regs);
-#ifdef CONFIG_STM32H7
-	u32 reg = 0;
-	//writel(reg,0x58000404);
-	reg = readl(0x58000404);
-	debug("%s .....reg = %x.........\n", __func__,reg);
-	setbits_le32(0x580244f4, BIT(1));
-	reg = readl(0x58000404);
-	debug("%s .....reg = %x.........\n", __func__,reg);
-	setbits_le32(0x58000404, BIT(23));
-	clrbits_le32(0x58000404, BIT(22));
-	clrbits_le32(0x58000404, BIT(21));
-	reg = readl(0x58000404);
-	debug("%s .....reg = %x.........\n", __func__,reg);
-	reg = readl(0x52004140);
-	debug("%s .....sdcr1= %x.........\n", __func__,reg);
-#endif
+
+	debug("%s: mac_regs=%p mtl_regs=%p dma_regs=%p\n", __func__,
+	      eqos->mac_regs, eqos->mtl_regs, eqos->dma_regs);
+
+	if (eqos->config->config_type == EQOS_CONFIG_STM32H7) {
+		eqos_probe_stm32h7_syscfg(dev);
+		eqos_probe_stm32h7_eth_clocks(dev);
+	}
+
+	if (eqos->config->config_type == EQOS_CONFIG_TEGRA186) {
+		eqos->tegra186_regs = (void *)(eqos->regs +
+					       EQOS_TEGRA186_REGS_BASE);
+	}
 
 #ifdef CONFIG_CLK
-	int i, err, clock_nb;
+	{
+		int i, err, clock_nb;
 
-	eqos->clock_count = 0;
-	clock_nb = dev_count_phandle_with_args(dev, "clocks", "#clock-cells");
-	if (clock_nb > 0) {
-		eqos->clocks = devm_kcalloc(dev, clock_nb, sizeof(struct clk),
-					    GFP_KERNEL);
-		if (!eqos->clocks)
-			return -ENOMEM;
+		eqos->clock_count = 0;
+		clock_nb = dev_count_phandle_with_args(dev, "clocks",
+						       "#clock-cells");
+		if (clock_nb > 0) {
+			eqos->clocks = devm_kcalloc(dev, clock_nb,
+						    sizeof(struct clk),
+						    GFP_KERNEL);
+			if (!eqos->clocks)
+				return -ENOMEM;
 
-		for (i = 0; i < clock_nb; i++) {
-			err = clk_get_by_index(dev, i, &eqos->clocks[i]);
-			if (err < 0)
-				break;
+			for (i = 0; i < clock_nb; i++) {
+				err = clk_get_by_index(dev, i, &eqos->clocks[i]);
+				if (err < 0)
+					break;
 
-			err = clk_enable(&eqos->clocks[i]);
-			if (err && err != -ENOSYS && err != -ENOTSUPP) {
-				pr_err("failed to enable clock %d\n", i);
-				clk_free(&eqos->clocks[i]);
-				goto clk_err;
+				err = clk_enable(&eqos->clocks[i]);
+				if (err && err != -ENOSYS &&
+				    err != -ENOTSUPP) {
+					pr_err("failed to enable clock %d\n", i);
+					clk_free(&eqos->clocks[i]);
+					goto clk_err;
+				}
+				eqos->clock_count++;
 			}
-			eqos->clock_count++;
+		} else if (clock_nb != -ENOENT) {
+			pr_err("failed to get clock phandle(%d)\n", clock_nb);
+			return clock_nb;
 		}
-	} else if (clock_nb != -ENOENT) {
-		pr_err("failed to get clock phandle(%d)\n", clock_nb);
-		return clock_nb;
 	}
 #endif
 
-
-	ret = eqos_probe_resources_core(dev); //分配内存BUFF
+	ret = eqos_probe_resources_core(dev);
 	if (ret < 0) {
 		debug("eqos_probe_resources_core() failed: %d", ret);
 		return ret;
@@ -1427,7 +1435,7 @@ static int eqos_probe(struct udevice *dev)
 	eqos->mii = mdio_alloc();
 	if (!eqos->mii) {
 		debug("mdio_alloc() failed");
-		goto err_remove_resources_tegra;
+		goto err_remove_resources;
 	}
 	eqos->mii->read = eqos_mdio_read;
 	eqos->mii->write = eqos_mdio_write;
@@ -1448,13 +1456,12 @@ static int eqos_probe(struct udevice *dev)
 
 err_free_mdio:
 	mdio_free(eqos->mii);
-err_remove_resources_tegra:
-	eqos_remove_resources_tegra186(dev);
-err_remove_resources_core:
+err_remove_resources:
 	eqos_remove_resources_core(dev);
+#ifdef CONFIG_CLK
 clk_err:
-	ret = clk_release_all(eqos->clocks, eqos->clock_count);
-	if (ret) debug("failed to disable all clocks\n");
+	clk_release_all(eqos->clocks, eqos->clock_count);
+#endif
 
 	debug("%s: returns %d\n", __func__, ret);
 	return ret;
@@ -1468,8 +1475,19 @@ static int eqos_remove(struct udevice *dev)
 
 	mdio_unregister(eqos->mii);
 	mdio_free(eqos->mii);
-	eqos_remove_resources_tegra186(dev);
-	eqos_probe_resources_core(dev);
+
+	switch (eqos->config->config_type) {
+	case EQOS_CONFIG_TEGRA186:
+		eqos_remove_resources_tegra186(dev);
+		break;
+	case EQOS_CONFIG_STM32H7:
+		eqos_remove_resources_stm32h7(dev);
+		break;
+	default:
+		break;
+	}
+
+	eqos_remove_resources_core(dev);
 
 	debug("%s: OK\n", __func__);
 	return 0;
@@ -1486,6 +1504,12 @@ static const struct eth_ops eqos_ops = {
 
 static const struct eqos_config eqos_tegra186_config = {
 	.reg_access_always_ok = false,
+	.config_type = EQOS_CONFIG_TEGRA186,
+};
+
+static const struct eqos_config eqos_stm32h7_config = {
+	.reg_access_always_ok = false,
+	.config_type = EQOS_CONFIG_STM32H7,
 };
 
 static const struct udevice_id eqos_ids[] = {
@@ -1493,7 +1517,10 @@ static const struct udevice_id eqos_ids[] = {
 		.compatible = "nvidia,tegra186-eqos",
 		.data = (ulong)&eqos_tegra186_config
 	},
-	{ .compatible = "st,stm32h7-dwmac" },
+	{
+		.compatible = "st,stm32h7-dwmac",
+		.data = (ulong)&eqos_stm32h7_config
+	},
 	{ }
 };
 
